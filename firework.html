@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Amiga Fireworks</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: black;
+    }
+  </style>
+</head>
+<body>
+  <script>
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    const svg = d3.select("body")
+      .append("svg")
+      .attr("width", width)
+      .attr("height", height)
+      .style("background", "black");
+
+    const amigaColors = [
+      "#00FFFF", "#FF00FF", "#FFFF00", "#FF0000", "#00FF00", "#0000FF", "#FFFFFF", "#888888"
+    ];
+
+    const activeFireworks = [];
+
+    function launchRocket() {
+      const firework = {
+        id: Date.now(),
+        state: 'LAUNCHING',
+        particles: [],
+        group: null,
+        startTime: Date.now()
+      };
+      
+      activeFireworks.push(firework);
+
+      const x = Math.random() * width;
+      const targetX = x + (Math.random() - 0.5) * 200;
+      const targetY = height * 0.2 + Math.random() * height * 0.2;
+      const rocketColor = amigaColors[Math.floor(Math.random() * amigaColors.length)];
+      
+      const rocketGroup = svg.append("g");
+      firework.group = rocketGroup;
+      
+      const trail = rocketGroup.append("line")
+        .attr("x1", x)
+        .attr("y1", height)
+        .attr("x2", x)
+        .attr("y2", height)
+        .attr("stroke", rocketColor)
+        .attr("stroke-width", 1)
+        .attr("opacity", 0.3);
+
+      const rocket = rocketGroup.append("circle")
+        .attr("cx", x)
+        .attr("cy", height)
+        .attr("r", 2)
+        .attr("fill", rocketColor);
+
+      const cp1x = x;
+      const cp1y = height * 0.7;
+      const cp2x = targetX;
+      const cp2y = targetY + 100;
+
+      const points = [];
+      const numPoints = 100;
+      
+      for (let i = 0; i < numPoints; i++) {
+        const t = i / (numPoints - 1);
+        const px = cubicBezier(x, cp1x, cp2x, targetX, t);
+        const py = cubicBezier(height, cp1y, cp2y, targetY, t);
+        points.push([px, py]);
+      }
+
+      let currentPoint = 0;
+      let lastPoint = [x, height];
+      
+      function animateAlongPath() {
+        if (currentPoint >= points.length - 1) {
+          firework.state = 'EXPLODING';
+          rocketGroup.remove();
+          createEnhancedExplosion(points[points.length - 1][0], points[points.length - 1][1], rocketColor, firework);
+          return;
+        }
+
+        const point = points[currentPoint];
+        rocket
+          .attr("cx", point[0])
+          .attr("cy", point[1]);
+
+        trail
+          .attr("x1", lastPoint[0])
+          .attr("y1", lastPoint[1])
+          .attr("x2", point[0])
+          .attr("y2", point[1]);
+
+        lastPoint = point;
+        currentPoint++;
+        requestAnimationFrame(animateAlongPath);
+      }
+
+      animateAlongPath();
+    }
+
+    function createEnhancedExplosion(cx, cy, baseColor, firework) {
+      firework.startTime = Date.now();
+      
+      const explosionType = Math.floor(Math.random() * 4);
+      const numParticles = Math.floor(Math.random() * 60) + 40;
+      const particles = [];
+
+      for (let i = 0; i < numParticles; i++) {
+        const angle = (i / numParticles) * Math.PI * 2;
+        const speed = Math.random() * 8 + 4;
+        
+        const particlePattern = explosionType === 0 ? {
+          angle: angle + Math.random() * 0.5,
+          speed: speed
+        } : explosionType === 1 ? {
+          angle: angle * 2 + Math.random() * 0.3,
+          speed: speed * 1.2
+        } : explosionType === 2 ? {
+          angle: (Math.floor(i / 8) * Math.PI / 4) + Math.random() * 0.2,
+          speed: speed * 1.5
+        } : {
+          angle: angle,
+          speed: speed * (1 + Math.sin(angle) * 0.5)
+        };
+
+        particles.push({
+          x: cx,
+          y: cy,
+          color: amigaColors[Math.floor(Math.random() * amigaColors.length)],
+          radius: Math.random() * 3 + 1,
+          ...particlePattern,
+          decay: Math.random() * 0.02 + 0.02,
+          gravity: 0.15,
+          velocityY: 0,
+          trail: []
+        });
+      }
+
+      setTimeout(() => {
+        if (Math.random() > 0.5) {
+          createEnhancedExplosion(cx + Math.random() * 100 - 50, 
+                                 cy + Math.random() * 100 - 50, 
+                                 baseColor);
+        }
+      }, 500);
+
+      const explosionGroup = svg.append("g");
+      
+      const circles = explosionGroup.selectAll(null)
+        .data(particles)
+        .enter()
+        .append("circle")
+        .attr("cx", d => d.x)
+        .attr("cy", d => d.y)
+        .attr("r", d => d.radius)
+        .attr("fill", d => d.color);
+
+      let frame = 0;
+      function updateParticles() {
+        const age = Date.now() - firework.startTime;
+        
+        if (age > 2000) {
+          explosionGroup.remove();
+          firework.state = 'DONE';
+          return;
+        }
+        
+        const fadeProgress = Math.min(1, (age - 1500) / 500);
+        
+        circles
+          .attr("cx", d => {
+            d.x += Math.cos(d.angle) * d.speed;
+            return d.x;
+          })
+          .attr("cy", d => {
+            d.velocityY += d.gravity;
+            d.y += Math.sin(d.angle) * d.speed + d.velocityY;
+            return d.y;
+          })
+          .attr("r", d => d.radius * (1 - fadeProgress))
+          .style("opacity", 1 - fadeProgress);
+
+        requestAnimationFrame(updateParticles);
+      }
+
+      updateParticles();
+    }
+
+    function cubicBezier(p0, p1, p2, p3, t) {
+      return Math.pow(1-t, 3) * p0 +
+             3 * Math.pow(1-t, 2) * t * p1 +
+             3 * (1-t) * Math.pow(t, 2) * p2 +
+             Math.pow(t, 3) * p3;
+    }
+
+    svg.on("click", (event) => {
+      const mouse = d3.pointer(event);
+      launchRocket(mouse[0]);
+    });
+
+    function randomLaunch() {
+      const count = Math.floor(Math.random() * 3) + 1;
+      for(let i = 0; i < count; i++) {
+        setTimeout(() => launchRocket(), Math.random() * 500);
+      }
+    }
+
+    let autoLaunch = setInterval(randomLaunch, 1500);
+
+    function cleanupFireworks() {
+      for (let i = activeFireworks.length - 1; i >= 0; i--) {
+        if (activeFireworks[i].state === 'DONE') {
+          if (activeFireworks[i].group) {
+            activeFireworks[i].group.remove();
+          }
+          activeFireworks.splice(i, 1);
+        }
+      }
+    }
+
+    setInterval(cleanupFireworks, 1000);
+  </script>
+</body>
+</html>
